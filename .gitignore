@@ -47,10 +47,13 @@ pcviewer.cfg
 *_resource.rc
 .#*
 *.*#
+*_wrapper.sh
+*_wrapper.bat
+wrapper.sh
+wrapper.bat
 core
 .qmake.cache
 .qmake.vars
-.qmake.stash
 .device.vars
 *.prl
 tags
@@ -82,7 +85,6 @@ bin/pixeltool*
 bin/qmake*
 bin/qdoc*
 bin/qt3to4*
-bin/qtdemo*
 bin/qttracereplay*
 bin/rcc*
 bin/uic*

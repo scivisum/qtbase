@@ -4,8 +4,6 @@ android:!android-no-sdk: SUBDIRS += android
 
 SUBDIRS += minimal
 
-!win32:!winrt: SUBDIRS += phantom
-
 !win32|contains(QT_CONFIG, freetype):SUBDIRS += offscreen
 
 contains(QT_CONFIG, xcb) {
@@ -42,3 +40,5 @@ contains(QT_CONFIG, linuxfb): SUBDIRS += linuxfb
 haiku {
     SUBDIRS += haiku
 }
+
+contains(QT_CONFIG, mirclient): SUBDIRS += mirclient

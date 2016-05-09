@@ -10,7 +10,4 @@ win32 {
     }
 } else {
     LIBS_PRIVATE += -licui18n -licuuc -licudata
-    CONFIG(static) {
-      LIBS_PRIVATE += -ldl
-    }
 }
