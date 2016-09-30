@@ -62,7 +62,6 @@ class tst_QImageWriter : public QObject
 
 public:
     tst_QImageWriter();
-    virtual ~tst_QImageWriter();
 
 public slots:
     void init();
@@ -117,7 +116,7 @@ void tst_QImageWriter::initTestCase()
     prefix = QFINDTESTDATA("images/");
     if (prefix.isEmpty())
         QFAIL("Can't find images directory!");
-    writePrefix = m_temporaryDir.path();
+    writePrefix = m_temporaryDir.path() + QLatin1Char('/');
 }
 
 // Testing get/set functions
@@ -167,16 +166,6 @@ tst_QImageWriter::tst_QImageWriter()
 {
 }
 
-tst_QImageWriter::~tst_QImageWriter()
-{
-    QDir dir(prefix);
-    QStringList filesToDelete = dir.entryList(QStringList() << "gen-*" , QDir::NoDotAndDotDot | QDir::Files);
-    foreach( QString file, filesToDelete) {
-        QFile::remove(dir.absoluteFilePath(file));
-    }
-
-}
-
 void tst_QImageWriter::init()
 {
 }
@@ -199,6 +188,7 @@ void tst_QImageWriter::writeImage_data()
     QTest::newRow("PBM: ship63") << QString("ship63.pbm") << true << QByteArray("pbm");
     QTest::newRow("XBM: gnus") << QString("gnus.xbm") << false << QByteArray("xbm");
     QTest::newRow("JPEG: beavis") << QString("beavis.jpg") << true << QByteArray("jpeg");
+    QTest::newRow("ICO: App") << QString("App.ico") << true << QByteArray("ico");
 }
 
 void tst_QImageWriter::writeImage()
@@ -260,7 +250,7 @@ void tst_QImageWriter::writeImage2_data()
     QTest::addColumn<QImage>("image");
 
     const QStringList formats = QStringList() << "bmp" << "xpm" << "png"
-                                              << "ppm"; //<< "jpeg";
+                                              << "ppm" << "ico"; //<< "jpeg";
     QImage image0(70, 70, QImage::Format_ARGB32);
     image0.fill(QColor(Qt::red).rgb());
 

@@ -276,6 +276,7 @@ private slots:
     void testOperators() const;
 
     void reserve();
+    void reserveZero();
     void reallocAfterCopy_data();
     void reallocAfterCopy();
     void initializeListInt();
@@ -431,7 +432,7 @@ void tst_QVector::copyConstructor() const
         QVector<T> v2(v1);
         QCOMPARE(v1, v2);
     }
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     // ### Qt6 remove this section
     {
         QVector<T> v1;
@@ -595,7 +596,7 @@ void tst_QVector::append() const
         QVERIFY(v.size() == 3);
         QCOMPARE(v.at(v.size() - 1), SimpleValue<T>::at(0));
     }
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     // ### Qt6 remove this section
     {
         QVector<T> v(2);
@@ -930,7 +931,7 @@ void tst_QVector::eraseEmpty() const
         v.erase(v.begin(), v.end());
         QCOMPARE(v.size(), 0);
     }
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     // ### Qt6 remove this section
     {
         QVector<T> v;
@@ -969,7 +970,7 @@ void tst_QVector::eraseEmptyReserved() const
         v.erase(v.begin(), v.end());
         QCOMPARE(v.size(), 0);
     }
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     // ### Qt6 remove this section
     {
         QVector<T> v;
@@ -1085,7 +1086,7 @@ void tst_QVector::erase(bool shared) const
         if (shared)
             QCOMPARE(SimpleValue<T>::vector(12), *svc.copy);
     }
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     // ### Qt6 remove this section
     {
         QVector<T> v = SimpleValue<T>::vector(10);
@@ -1172,7 +1173,7 @@ template<typename T> void tst_QVector::eraseReserved() const
         v.erase(v.begin() + 1, v.end() - 1);
         QCOMPARE(v.size(), 2);
     }
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     // ### Qt6 remove this section
     {
         QVector<T> v(10);
@@ -1907,7 +1908,7 @@ void tst_QVector::resizePOD_data() const
     QTest::newRow("nonEmpty") << nonEmpty << 10;
     QTest::newRow("nonEmptyReserved") << nonEmptyReserved << 10;
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     // ### Qt6 remove this section
     QVector<int> nullNotShared;
     QVector<int> emptyNotShared(0, 5);
@@ -1982,7 +1983,7 @@ void tst_QVector::resizeComplexMovable_data() const
     QTest::newRow("nonEmpty") << nonEmpty << 10;
     QTest::newRow("nonEmptyReserved") << nonEmptyReserved << 10;
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     // ### Qt6 remove this section
     QVector<Movable> nullNotShared;
     QVector<Movable> emptyNotShared(0, 'Q');
@@ -2061,7 +2062,7 @@ void tst_QVector::resizeComplex_data() const
     QTest::newRow("nonEmpty") << nonEmpty << 10;
     QTest::newRow("nonEmptyReserved") << nonEmptyReserved << 10;
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     // ### Qt6 remove this section
     QVector<Custom> nullNotShared;
     QVector<Custom> emptyNotShared(0, '0');
@@ -2369,11 +2370,32 @@ void tst_QVector::reserve()
     {
         QVector<Foo> a;
         a.resize(2);
+        QCOMPARE(fooCtor, 2);
         QVector<Foo> b(a);
         b.reserve(1);
         QCOMPARE(b.size(), a.size());
+        QCOMPARE(fooDtor, 0);
     }
     QCOMPARE(fooCtor, fooDtor);
+}
+
+// This is a regression test for QTBUG-51758
+void tst_QVector::reserveZero()
+{
+    QVector<int> vec;
+    vec.detach();
+    vec.reserve(0); // should not crash
+    QCOMPARE(vec.size(), 0);
+    QCOMPARE(vec.capacity(), 0);
+    vec.squeeze();
+    QCOMPARE(vec.size(), 0);
+    QCOMPARE(vec.capacity(), 0);
+    vec.reserve(-1);
+    QCOMPARE(vec.size(), 0);
+    QCOMPARE(vec.capacity(), 0);
+    vec.append(42);
+    QCOMPARE(vec.size(), 1);
+    QVERIFY(vec.capacity() >= 1);
 }
 
 // This is a regression test for QTBUG-11763, where memory would be reallocated
@@ -2500,7 +2522,7 @@ void tst_QVector::initializeListCustom()
 void tst_QVector::const_shared_null()
 {
     QVector<int> v2;
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
     // ### Qt6 remove this section
     QVector<int> v1;
     v1.setSharable(false);
@@ -2511,7 +2533,7 @@ void tst_QVector::const_shared_null()
     QVERIFY(!v2.isDetached());
 }
 
-#if QT_SUPPORTS(UNSHARABLE_CONTAINERS)
+#if !defined(QT_NO_UNSHARABLE_CONTAINERS)
 // ### Qt6 remove this section
 template<typename T>
 void tst_QVector::setSharable_data() const

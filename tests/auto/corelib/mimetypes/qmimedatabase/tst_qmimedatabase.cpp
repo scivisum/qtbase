@@ -132,6 +132,7 @@ tst_QMimeDatabase::tst_QMimeDatabase()
 
 void tst_QMimeDatabase::initTestCase()
 {
+    QLocale::setDefault(QLocale::c());
     QVERIFY2(m_temporaryDir.isValid(), qPrintable(m_temporaryDir.errorString()));
     QStandardPaths::setTestModeEnabled(true);
     m_localMimeDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/mime";
@@ -450,6 +451,21 @@ void tst_QMimeDatabase::icons()
     QCOMPARE(pub.genericIconName(), QString::fromLatin1("x-office-document"));
 }
 
+void tst_QMimeDatabase::comment()
+{
+    struct RestoreLocale
+    {
+        ~RestoreLocale() { QLocale::setDefault(QLocale::c()); }
+    } restoreLocale;
+
+    QLocale::setDefault(QLocale("de"));
+    QMimeDatabase db;
+    QMimeType directory = db.mimeTypeForName(QStringLiteral("inode/directory"));
+    QCOMPARE(directory.comment(), QStringLiteral("Ordner"));
+    QLocale::setDefault(QLocale("fr"));
+    QCOMPARE(directory.comment(), QStringLiteral("dossier"));
+}
+
 // In here we do the tests that need some content in a temporary file.
 // This could also be added to shared-mime-info's testsuite...
 void tst_QMimeDatabase::mimeTypeForFileWithContent()
@@ -518,6 +534,8 @@ void tst_QMimeDatabase::mimeTypeForUrl()
     QVERIFY(db.mimeTypeForUrl(QUrl::fromEncoded("http://foo/bar.png")).isDefault()); // HTTP can't know before downloading
     QCOMPARE(db.mimeTypeForUrl(QUrl::fromEncoded("ftp://foo/bar.png")).name(), QString::fromLatin1("image/png"));
     QCOMPARE(db.mimeTypeForUrl(QUrl::fromEncoded("ftp://foo/bar")).name(), QString::fromLatin1("application/octet-stream")); // unknown extension
+    QCOMPARE(db.mimeTypeForUrl(QUrl("mailto:something@example.com")).name(), QString::fromLatin1("application/octet-stream")); // unknown
+    QCOMPARE(db.mimeTypeForUrl(QUrl("mailto:something@polish.pl")).name(), QString::fromLatin1("application/octet-stream")); // unknown, NOT perl ;)
 }
 
 void tst_QMimeDatabase::mimeTypeForData_data()

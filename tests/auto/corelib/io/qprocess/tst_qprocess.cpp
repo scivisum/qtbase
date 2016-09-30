@@ -45,16 +45,6 @@
 #include <QtNetwork/QHostInfo>
 #include <stdlib.h>
 
-#ifndef QT_NO_PROCESS
-# include <private/qprocess_p.h>    // only so we get QPROCESS_USE_SPAWN
-# if defined(Q_OS_WIN)
-#  include <windows.h>
-# endif
-
-Q_DECLARE_METATYPE(QProcess::ExitStatus);
-Q_DECLARE_METATYPE(QProcess::ProcessState);
-#endif
-
 typedef void (QProcess::*QProcessFinishedSignal1)(int);
 typedef void (QProcess::*QProcessFinishedSignal2)(int, QProcess::ExitStatus);
 typedef void (QProcess::*QProcessErrorSignal)(QProcess::ProcessError);
@@ -153,6 +143,8 @@ private slots:
     void startStopStartStop();
     void startStopStartStopBuffers_data();
     void startStopStartStopBuffers();
+    void processEventsInAReadyReadSlot_data();
+    void processEventsInAReadyReadSlot();
 
     // keep these at the end, since they use lots of processes and sometimes
     // caused obscure failures to occur in tests that followed them (esp. on the Mac)
@@ -165,6 +157,7 @@ private slots:
 protected slots:
     void readFromProcess();
     void exitLoopSlot();
+    void processApplicationEvents();
 #ifndef Q_OS_WINCE
     void restartProcess();
     void waitForReadyReadInAReadyReadSlotSlot();
@@ -330,9 +323,6 @@ void tst_QProcess::startDetached()
 {
     QVERIFY(QProcess::startDetached("testProcessNormal/testProcessNormal",
                                     QStringList() << "arg1" << "arg2"));
-#ifdef QPROCESS_USE_SPAWN
-    QEXPECT_FAIL("", "QProcess cannot detect failure to start when using posix_spawn()", Continue);
-#endif
     QCOMPARE(QProcess::startDetached("nonexistingexe"), false);
 }
 
@@ -481,6 +471,11 @@ void tst_QProcess::echoTest()
 void tst_QProcess::exitLoopSlot()
 {
     QTestEventLoop::instance().exitLoop();
+}
+
+void tst_QProcess::processApplicationEvents()
+{
+    QCoreApplication::processEvents();
 }
 
 #ifndef Q_OS_WINCE
@@ -697,11 +692,7 @@ void tst_QProcess::waitForFinished()
 
     process.start("testProcessOutput/testProcessOutput");
 
-#if !defined(Q_OS_WINCE)
-    QVERIFY(process.waitForFinished(5000));
-#else
-    QVERIFY(process.waitForFinished(30000));
-#endif
+    QVERIFY(process.waitForFinished());
     QCOMPARE(process.exitStatus(), QProcess::NormalExit);
 
 #if defined (Q_OS_WINCE)
@@ -711,9 +702,6 @@ void tst_QProcess::waitForFinished()
     QCOMPARE(output.count("\n"), 10*1024);
 
     process.start("blurdybloop");
-#if defined(QPROCESS_USE_SPAWN) && !defined(Q_OS_QNX)
-    QEXPECT_FAIL("", "QProcess cannot detect failure to start when using posix_spawn()", Abort);
-#endif
     QVERIFY(!process.waitForFinished());
     QCOMPARE(process.error(), QProcess::FailedToStart);
 }
@@ -776,6 +764,7 @@ void tst_QProcess::restartProcess()
 // Reading and writing to a process is not supported on Qt/CE
 void tst_QProcess::closeWriteChannel()
 {
+    QByteArray testData("Data to read");
     QProcess more;
     more.start("testProcessEOF/testProcessEOF");
 
@@ -783,19 +772,21 @@ void tst_QProcess::closeWriteChannel()
     QVERIFY(!more.waitForReadyRead(250));
     QCOMPARE(more.error(), QProcess::Timedout);
 
-    QVERIFY(more.write("Data to read") != -1);
+    QCOMPARE(more.write(testData), qint64(testData.size()));
 
     QVERIFY(!more.waitForReadyRead(250));
     QCOMPARE(more.error(), QProcess::Timedout);
 
     more.closeWriteChannel();
-
-    QVERIFY(more.waitForReadyRead(5000));
-    QVERIFY(more.readAll().startsWith("Data to read"));
+    // During closeWriteChannel() call, we might also get an I/O completion
+    // on the read pipe. So, take this into account before waiting for
+    // the new incoming data.
+    while (more.bytesAvailable() < testData.size())
+        QVERIFY(more.waitForReadyRead(5000));
+    QCOMPARE(more.readAll(), testData);
 
     if (more.state() == QProcess::Running)
-        more.write("q");
-    QVERIFY(more.waitForFinished(5000));
+        QVERIFY(more.waitForFinished(5000));
     QCOMPARE(more.exitStatus(), QProcess::NormalExit);
     QCOMPARE(more.exitCode(), 0);
 }
@@ -925,10 +916,15 @@ void tst_QProcess::hardExit()
     proc.start("testProcessEcho/testProcessEcho");
 #endif
 
-#ifndef Q_OS_WINCE
-    QVERIFY(proc.waitForStarted(5000));
-#else
-    QVERIFY(proc.waitForStarted(10000));
+    QVERIFY2(proc.waitForStarted(), qPrintable(proc.errorString()));
+
+#if defined(Q_OS_QNX)
+    // QNX may lose the kill if it's delivered while the forked process
+    // is doing the exec that morphs it into testProcessEcho.  It's very
+    // unlikely that a normal application would do such a thing.  Make
+    // sure the test doesn't accidentally try to do it.
+    proc.write("A");
+    QVERIFY(proc.waitForReadyRead(5000));
 #endif
 
     proc.kill();
@@ -1050,24 +1046,33 @@ private:
 void tst_QProcess::softExitInSlots_data()
 {
     QTest::addColumn<QString>("appName");
+    QTest::addColumn<int>("signalToConnect");
 
+    QByteArray dataTagPrefix("gui app ");
 #ifndef QT_NO_WIDGETS
-    QTest::newRow("gui app") << "testGuiProcess/testGuiProcess";
+    for (int i = 0; i < 5; ++i) {
+        QTest::newRow(dataTagPrefix + QByteArray::number(i))
+                << "testGuiProcess/testGuiProcess" << i;
+    }
 #endif
-    QTest::newRow("console app") << "testProcessEcho2/testProcessEcho2";
+
+    dataTagPrefix = "console app ";
+    for (int i = 0; i < 5; ++i) {
+        QTest::newRow(dataTagPrefix + QByteArray::number(i))
+                << "testProcessEcho2/testProcessEcho2" << i;
+    }
 }
 
 void tst_QProcess::softExitInSlots()
 {
     QFETCH(QString, appName);
+    QFETCH(int, signalToConnect);
 
-    for (int i = 0; i < 5; ++i) {
-        SoftExitProcess proc(i);
-        proc.writeAfterStart("OLEBOLE", 8); // include the \0
-        proc.start(appName);
-        QTRY_VERIFY_WITH_TIMEOUT(proc.waitedForFinished, 10000);
-        QCOMPARE(proc.state(), QProcess::NotRunning);
-    }
+    SoftExitProcess proc(signalToConnect);
+    proc.writeAfterStart("OLEBOLE", 8); // include the \0
+    proc.start(appName);
+    QTRY_VERIFY_WITH_TIMEOUT(proc.waitedForFinished, 10000);
+    QCOMPARE(proc.state(), QProcess::NotRunning);
 }
 #endif
 
@@ -1414,24 +1419,17 @@ void tst_QProcess::spaceArgsTest()
         QString program = programs.at(i);
         process.start(program, args);
 
-#if defined(Q_OS_WINCE)
-        const int timeOutMS = 10000;
-#else
-        const int timeOutMS = 5000;
-#endif
         QByteArray errorMessage;
-        bool started = process.waitForStarted(timeOutMS);
+        bool started = process.waitForStarted();
         if (!started)
             errorMessage = startFailMessage(program, process);
         QVERIFY2(started, errorMessage.constData());
-        QVERIFY(process.waitForFinished(timeOutMS));
+        QVERIFY(process.waitForFinished());
         QCOMPARE(process.exitStatus(), QProcess::NormalExit);
         QCOMPARE(process.exitCode(), 0);
 
 #if !defined(Q_OS_WINCE)
         QStringList actual = QString::fromLatin1(process.readAll()).split("|");
-#endif
-#if !defined(Q_OS_WINCE)
         QVERIFY(!actual.isEmpty());
         // not interested in the program name, it might be different.
         actual.removeFirst();
@@ -1456,8 +1454,6 @@ void tst_QProcess::spaceArgsTest()
 
 #if !defined(Q_OS_WINCE)
         actual = QString::fromLatin1(process.readAll()).split("|");
-#endif
-#if !defined(Q_OS_WINCE)
         QVERIFY(!actual.isEmpty());
         // not interested in the program name, it might be different.
         actual.removeFirst();
@@ -1479,13 +1475,8 @@ void tst_QProcess::nativeArguments()
 
     proc.start(QString::fromLatin1("testProcessSpacesArgs/nospace"), QStringList());
 
-#if !defined(Q_OS_WINCE)
-    QVERIFY(proc.waitForStarted(5000));
-    QVERIFY(proc.waitForFinished(5000));
-#else
-    QVERIFY(proc.waitForStarted(10000));
-    QVERIFY(proc.waitForFinished(10000));
-#endif
+    QVERIFY2(proc.waitForStarted(), qPrintable(proc.errorString()));
+    QVERIFY(proc.waitForFinished());
     QCOMPARE(proc.exitStatus(), QProcess::NormalExit);
     QCOMPARE(proc.exitCode(), 0);
 
@@ -1517,11 +1508,6 @@ void tst_QProcess::nativeArguments()
 void tst_QProcess::exitCodeTest()
 {
     for (int i = 0; i < 255; ++i) {
-#ifdef QPROCESS_USE_SPAWN
-        // POSIX reserves exit code 127 when using posix_spawn
-        if (i == 127)
-            continue;
-#endif
         QProcess process;
         process.start("testExitCodes/testExitCodes " + QString::number(i));
         QVERIFY(process.waitForFinished(5000));
@@ -1532,9 +1518,6 @@ void tst_QProcess::exitCodeTest()
 
 void tst_QProcess::failToStart()
 {
-#if defined(QPROCESS_USE_SPAWN) && !defined(Q_OS_QNX)
-    QSKIP("QProcess cannot detect failure to start when using posix_spawn()");
-#endif
     qRegisterMetaType<QProcess::ProcessError>("QProcess::ProcessError");
     qRegisterMetaType<QProcess::ExitStatus>("QProcess::ExitStatus");
     qRegisterMetaType<QProcess::ProcessState>("QProcess::ProcessState");
@@ -1605,9 +1588,6 @@ void tst_QProcess::failToStart()
 
 void tst_QProcess::failToStartWithWait()
 {
-#if defined(QPROCESS_USE_SPAWN) && !defined(Q_OS_QNX)
-    QSKIP("QProcess cannot detect failure to start when using posix_spawn()");
-#endif
     qRegisterMetaType<QProcess::ProcessError>("QProcess::ProcessError");
     qRegisterMetaType<QProcess::ExitStatus>("QProcess::ExitStatus");
 
@@ -1637,9 +1617,6 @@ void tst_QProcess::failToStartWithWait()
 
 void tst_QProcess::failToStartWithEventLoop()
 {
-#if defined(QPROCESS_USE_SPAWN) && !defined(Q_OS_QNX)
-    QSKIP("QProcess cannot detect failure to start when using posix_spawn()");
-#endif
     qRegisterMetaType<QProcess::ProcessError>("QProcess::ProcessError");
     qRegisterMetaType<QProcess::ExitStatus>("QProcess::ExitStatus");
 
@@ -1926,9 +1903,6 @@ void tst_QProcess::waitForReadyReadForNonexistantProcess()
     QVERIFY(!process.waitForReadyRead()); // used to crash
     process.start("doesntexist");
     QVERIFY(!process.waitForReadyRead());
-#if defined(QPROCESS_USE_SPAWN) && !defined(Q_OS_QNX)
-    QEXPECT_FAIL("", "QProcess cannot detect failure to start when using posix_spawn()", Abort);
-#endif
     QCOMPARE(errorSpy.count(), 1);
     QCOMPARE(errorSpy.at(0).at(0).toInt(), 0);
     QCOMPARE(errorSpy2.count(), 1);
@@ -2296,9 +2270,6 @@ void tst_QProcess::setNonExistentWorkingDirectory()
     // while on Unix with fork it's relative to the child's (with posix_spawn, it could be either).
     process.start(QFileInfo("testSetWorkingDirectory/testSetWorkingDirectory").absoluteFilePath());
     QVERIFY(!process.waitForFinished());
-#ifdef QPROCESS_USE_SPAWN
-    QEXPECT_FAIL("", "QProcess cannot detect failure to start when using posix_spawn()", Continue);
-#endif
     QCOMPARE(int(process.error()), int(QProcess::FailedToStart));
 }
 #endif
@@ -2519,6 +2490,31 @@ void tst_QProcess::startStopStartStopBuffers()
         if (channelMode2 == QProcess::SeparateChannels)
             QCOMPARE(process.readAllStandardError(), QByteArray("line3\n"));
     }
+}
+
+void tst_QProcess::processEventsInAReadyReadSlot_data()
+{
+    QTest::addColumn<bool>("callWaitForReadyRead");
+
+    QTest::newRow("no waitForReadyRead") << false;
+    QTest::newRow("waitForReadyRead") << true;
+}
+
+void tst_QProcess::processEventsInAReadyReadSlot()
+{
+    // Test whether processing events in a readyReadXXX slot crashes. (QTBUG-48697)
+    QFETCH(bool, callWaitForReadyRead);
+    QProcess process;
+    QObject::connect(&process, &QProcess::readyReadStandardOutput,
+                     this, &tst_QProcess::processApplicationEvents);
+    process.start("testProcessEcho/testProcessEcho");
+    QVERIFY(process.waitForStarted());
+    const QByteArray data(156, 'x');
+    process.write(data.constData(), data.size() + 1);
+    if (callWaitForReadyRead)
+        QVERIFY(process.waitForReadyRead());
+    if (process.state() == QProcess::Running)
+        QVERIFY(process.waitForFinished());
 }
 
 #endif //QT_NO_PROCESS
