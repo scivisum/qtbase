@@ -43,6 +43,7 @@
 
 QT_BEGIN_NAMESPACE
 
+const QString SYNCHRONOUS_REQUEST_TIMEOUT_MESSAGE = QString("Synchronous Request Timeout");
 
 class QUrl;
 class QVariant;

@@ -404,6 +404,7 @@ void QHttpThreadDelegate::abortRequest()
     // Got aborted by the timeout timer
     if (synchronous) {
         incomingErrorCode = QNetworkReply::TimeoutError;
+        incomingErrorDetail = SYNCHRONOUS_REQUEST_TIMEOUT_MESSAGE;
         QMetaObject::invokeMethod(synchronousRequestLoop, "quit", Qt::QueuedConnection);
     } else {
         //only delete this for asynchronous mode or QNetworkAccessHttpBackend will crash - see QNetworkAccessHttpBackend::postRequest()
